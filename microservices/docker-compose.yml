@@ -1,0 +1,224 @@
+version: '3.8'
+
+services:
+  # API Gateway - Entry point for all autonomous agent services
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET:-default-jwt-secret}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - security
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./certs:/app/certs:ro
+
+  # Security Service - Authentication and encryption
+  security:
+    build:
+      context: ./security
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - NODE_ENV=production
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-default-encryption-key}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./certs:/app/certs:ro
+      - security-data:/app/data
+
+  # Heartbeat Service - System health monitoring
+  heartbeat:
+    build:
+      context: ./heartbeat
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - NODE_ENV=production
+      - SECURITY_SERVICE_URL=http://security:8081
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - security
+      - redis
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./certs:/app/certs:ro
+
+  # Reflection Service - Meta-cognitive analysis
+  reflection:
+    build:
+      context: ./reflection
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - NODE_ENV=production
+      - SECURITY_SERVICE_URL=http://security:8081
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - security
+      - redis
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./certs:/app/certs:ro
+      - reflection-data:/app/data
+
+  # Optimization Service - Performance optimization
+  optimization:
+    build:
+      context: ./optimization
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      - NODE_ENV=production
+      - SECURITY_SERVICE_URL=http://security:8081
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - security
+      - redis
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./certs:/app/certs:ro
+      - optimization-data:/app/data
+
+  # Analytics Service - Metrics collection and analysis
+  analytics:
+    build:
+      context: ./analytics
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      - NODE_ENV=production
+      - SECURITY_SERVICE_URL=http://security:8081
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=${POSTGRES_URL:-postgresql://analytics:analytics@postgres:5432/analytics}
+    depends_on:
+      - security
+      - redis
+      - postgres
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./certs:/app/certs:ro
+      - analytics-data:/app/data
+
+  # Redis - Caching and session storage
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - agent-network
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-default-redis-password}
+
+  # PostgreSQL - Analytics data storage
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=analytics
+      - POSTGRES_USER=analytics
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-analytics}
+    ports:
+      - "5432:5432"
+    networks:
+      - agent-network
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./analytics/sql:/docker-entrypoint-initdb.d
+
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    networks:
+      - agent-network
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  # Grafana - Metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    networks:
+      - agent-network
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+
+networks:
+  agent-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  redis-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+  security-data:
+  reflection-data:
+  optimization-data:
+  analytics-data:
