@@ -40,7 +40,8 @@ const SERVICES = {
   heartbeat: process.env.HEARTBEAT_SERVICE_URL || 'http://heartbeat:8082',
   reflection: process.env.REFLECTION_SERVICE_URL || 'http://reflection:8083',
   optimization: process.env.OPTIMIZATION_SERVICE_URL || 'http://optimization:8084',
-  analytics: process.env.ANALYTICS_SERVICE_URL || 'http://analytics:8085'
+  analytics: process.env.ANALYTICS_SERVICE_URL || 'http://analytics:8085',
+  deltachatBridge: process.env.DELTACHAT_BRIDGE_SERVICE_URL || 'http://deltachat-bridge:8086'
 };
 
 interface AuthenticatedRequest extends express.Request {
@@ -334,6 +335,21 @@ class GatewayService {
         onError: (err, req, res) => {
           logger.error('Analytics service proxy error:', err);
           res.status(502).json({ error: 'Analytics service unavailable' });
+        }
+      })
+    );
+
+    // Delta-Chat Privacy Bridge proxy
+    this.app.use('/api/deltachat',
+      this.authenticateToken,
+      this.requirePermission('deltachat:access'),
+      createProxyMiddleware({
+        target: SERVICES.deltachatBridge,
+        changeOrigin: true,
+        pathRewrite: { '^/api/deltachat': '/api/deltachat' },
+        onError: (err, req, res) => {
+          logger.error('Delta-Chat bridge proxy error:', err);
+          res.status(502).json({ error: 'Delta-Chat bridge unavailable' });
         }
       })
     );
