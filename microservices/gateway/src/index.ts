@@ -40,7 +40,8 @@ const SERVICES = {
   heartbeat: process.env.HEARTBEAT_SERVICE_URL || 'http://heartbeat:8082',
   reflection: process.env.REFLECTION_SERVICE_URL || 'http://reflection:8083',
   optimization: process.env.OPTIMIZATION_SERVICE_URL || 'http://optimization:8084',
-  analytics: process.env.ANALYTICS_SERVICE_URL || 'http://analytics:8085'
+  analytics: process.env.ANALYTICS_SERVICE_URL || 'http://analytics:8085',
+  deltachatBridge: process.env.DELTACHAT_BRIDGE_SERVICE_URL || 'http://deltachat-bridge:8086'
 };
 
 interface AuthenticatedRequest extends express.Request {
@@ -183,14 +184,14 @@ class GatewayService {
           return;
         }
 
-        const userData = await response.json();
+        const userData = await response.json() as any;
         
         // Generate JWT token
         const token = jwt.sign({
           id: userData.id,
           role: userData.role,
           permissions: userData.permissions
-        }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+        }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
 
         // Store session in Redis
         await redisClient.setEx(`session:${userData.id}`, 3600, token);
@@ -231,12 +232,20 @@ class GatewayService {
       try {
         const serviceStatuses = await Promise.allSettled(
           Object.entries(SERVICES).map(async ([name, url]) => {
-            const response = await fetch(`${url}/health`, { timeout: 5000 });
-            return {
-              name,
-              status: response.ok ? 'healthy' : 'unhealthy',
-              responseTime: response.headers.get('x-response-time') || 'unknown'
-            };
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            try {
+              const response = await fetch(`${url}/health`, { signal: controller.signal });
+              clearTimeout(timeoutId);
+              return {
+                name,
+                status: response.ok ? 'healthy' : 'unhealthy',
+                responseTime: response.headers.get('x-response-time') || 'unknown'
+              };
+            } catch (error) {
+              clearTimeout(timeoutId);
+              throw error;
+            }
           })
         );
 
@@ -329,6 +338,21 @@ class GatewayService {
         }
       })
     );
+
+    // Delta-Chat Privacy Bridge proxy
+    this.app.use('/api/deltachat',
+      this.authenticateToken,
+      this.requirePermission('deltachat:access'),
+      createProxyMiddleware({
+        target: SERVICES.deltachatBridge,
+        changeOrigin: true,
+        pathRewrite: { '^/api/deltachat': '/api/deltachat' },
+        onError: (err, req, res) => {
+          logger.error('Delta-Chat bridge proxy error:', err);
+          res.status(502).json({ error: 'Delta-Chat bridge unavailable' });
+        }
+      })
+    );
   }
 
   private setupHealthCheck(): void {
@@ -368,7 +392,10 @@ gateway_uptime_seconds ${process.uptime()}
           // Ping all services to ensure they're healthy
           for (const [name, url] of Object.entries(SERVICES)) {
             try {
-              await fetch(`${url}/health`, { timeout: 2000 });
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 2000);
+              await fetch(`${url}/health`, { signal: controller.signal });
+              clearTimeout(timeoutId);
             } catch (error) {
               logger.warn(`Service ${name} health check failed:`, error);
             }

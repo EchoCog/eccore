@@ -150,6 +150,37 @@ services:
       - ./certs:/app/certs:ro
       - analytics-data:/app/data
 
+  # Delta-Chat Privacy Bridge - Privacy-preserving API bridge
+  deltachat-bridge:
+    build:
+      context: ./deltachat-bridge
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      - NODE_ENV=production
+      - SECURITY_SERVICE_URL=http://security:8081
+      - REFLECTION_SERVICE_URL=http://reflection:8083
+      - OPTIMIZATION_SERVICE_URL=http://optimization:8084
+      - ANALYTICS_SERVICE_URL=http://analytics:8085
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - security
+      - reflection
+      - optimization
+      - analytics
+      - redis
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./certs:/app/certs:ro
+      - deltachat-bridge-data:/app/data
+
   # Redis - Caching and session storage
   redis:
     image: redis:7-alpine
@@ -222,3 +253,4 @@ volumes:
   reflection-data:
   optimization-data:
   analytics-data:
+  deltachat-bridge-data:
