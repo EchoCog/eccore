@@ -183,14 +183,14 @@ class GatewayService {
           return;
         }
 
-        const userData = await response.json();
+        const userData = await response.json() as any;
         
         // Generate JWT token
         const token = jwt.sign({
           id: userData.id,
           role: userData.role,
           permissions: userData.permissions
-        }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+        }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
 
         // Store session in Redis
         await redisClient.setEx(`session:${userData.id}`, 3600, token);
@@ -231,12 +231,20 @@ class GatewayService {
       try {
         const serviceStatuses = await Promise.allSettled(
           Object.entries(SERVICES).map(async ([name, url]) => {
-            const response = await fetch(`${url}/health`, { timeout: 5000 });
-            return {
-              name,
-              status: response.ok ? 'healthy' : 'unhealthy',
-              responseTime: response.headers.get('x-response-time') || 'unknown'
-            };
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            try {
+              const response = await fetch(`${url}/health`, { signal: controller.signal });
+              clearTimeout(timeoutId);
+              return {
+                name,
+                status: response.ok ? 'healthy' : 'unhealthy',
+                responseTime: response.headers.get('x-response-time') || 'unknown'
+              };
+            } catch (error) {
+              clearTimeout(timeoutId);
+              throw error;
+            }
           })
         );
 
@@ -368,7 +376,10 @@ gateway_uptime_seconds ${process.uptime()}
           // Ping all services to ensure they're healthy
           for (const [name, url] of Object.entries(SERVICES)) {
             try {
-              await fetch(`${url}/health`, { timeout: 2000 });
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 2000);
+              await fetch(`${url}/health`, { signal: controller.signal });
+              clearTimeout(timeoutId);
             } catch (error) {
               logger.warn(`Service ${name} health check failed:`, error);
             }
