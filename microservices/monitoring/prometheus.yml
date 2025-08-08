@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'gateway'
+    static_configs:
+      - targets: ['gateway:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'security'
+    static_configs:
+      - targets: ['security:8081']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'heartbeat'
+    static_configs:
+      - targets: ['heartbeat:8082']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'reflection'
+    static_configs:
+      - targets: ['reflection:8083']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'optimization'
+    static_configs:
+      - targets: ['optimization:8084']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'analytics'
+    static_configs:
+      - targets: ['analytics:8085']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
